@@ -8,13 +8,14 @@ import {
   DEFAULT_DAYS, buildICS, activityInsights,
 } from './activity.js';
 import { CUES } from './guide.js';
+import { demoFrames } from './demos.js';
 import {
   attachGim, gimHTML, gimSettingsHTML, stepsAutoHTML, gimSend, gimMic, gimRetry, gimInstall, gimNew, gimSetup, stopSpeaking,
   personId, syncSteps, configured, t as gt,
 } from './gim.js';
 import { load, save, wipe, convertUnits, normalize, validateImport, withGoals } from './store.js';
 
-const VERSION = '1.2.0';
+const VERSION = '1.3.0';
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const cap = (s) => s[0].toUpperCase() + s.slice(1);
@@ -198,12 +199,12 @@ function setRow(i, j, s, bw) {
 }
 
 function exCardHTML(e, i, warmIdx) {
-  const ex = EXERCISES[e.exId], bw = ex.factor === null;
+  const ex = EXERCISES[e.exId], bw = ex.factor === null, demo = demoFrames(e.exId);
   const warm = i === warmIdx ? warmups(e.exId, +e.sets[0].w, unit()) : [];
   const done = e.sets.every((s) => s.done);
   const arrow = { up: '↑', down: '↓', back: '↺', deload: '≈', new: '★', same: '→' }[e.tone] || '';
   return `<section class="card ex ${done ? 'complete' : ''}">
-    <div class="ex-head"><div><h3><button class="ex-name" data-act="howto" data-id="${e.exId}">${esc(ex.name)} ${icon('info', 16)}</button></h3><p class="muted small">${cap(ex.muscle)} · ${e.sets.length} × ${e.lo}–${e.hi} · rest ${e.rest}s</p></div><button class="icon-btn" data-act="ex-menu" data-i="${i}" aria-label="Exercise options">${icon('more')}</button></div>
+    <div class="ex-head">${demo ? `<button class="ex-thumb" data-act="howto" data-id="${e.exId}" aria-label="How to do ${esc(ex.name)}"><img src="${demo[0]}" alt="" loading="lazy"></button>` : ''}<div class="grow"><h3><button class="ex-name" data-act="howto" data-id="${e.exId}">${esc(ex.name)} ${icon('info', 16)}</button></h3><p class="muted small">${cap(ex.muscle)} · ${e.sets.length} × ${e.lo}–${e.hi} · rest ${e.rest}s</p></div><button class="icon-btn" data-act="ex-menu" data-i="${i}" aria-label="Exercise options">${icon('more')}</button></div>
     <p class="note ${e.tone}"><b>${arrow}</b> ${esc(e.note)}</p>
     ${e.last ? `<p class="muted small">Last time: ${esc(formatSets(e.last, unit()))}</p>` : ''}
     ${warm.length ? `<p class="muted small">Warm-up: ${warm.map((s) => `${fmt(s.w)}×${s.r}`).join(' → ')}</p>` : ''}
@@ -398,8 +399,9 @@ function sheetHTML(sh) {
         <p class="muted small">Your phone opens the calendar file: tap Add All on iPhone, or Save on Android. To change them later, delete the Forge events in your calendar and add them again.${isIOS() && standalone() ? ' If nothing opens, do this once from Safari instead of the home screen app.' : ''}</p>`);
     }
     case 'howto': {
-      const ex = EXERCISES[sh.id];
+      const ex = EXERCISES[sh.id], demo = demoFrames(sh.id);
       return panel(`<h2>${esc(ex.name)}</h2><p class="muted">${cap(ex.muscle)} · ${cap(ex.equip)} · ${ex.kind}</p>
+        ${demo ? `<div class="demo" role="img" aria-label="${esc(ex.name)}: start and end position"><img src="${demo[0]}" alt=""><img class="end" src="${demo[1]}" alt=""></div><p class="muted small">Photos: free-exercise-db (public domain)</p>` : ''}
         <ol class="steps cues">${(CUES[sh.id] || []).map((c) => `<li>${esc(c)}</li>`).join('')}</ol>
         <a class="btn ghost block" href="https://www.youtube.com/results?search_query=${encodeURIComponent(`${ex.name} proper form`)}" target="_blank" rel="noopener">Watch a demo video</a>
         <button class="btn primary block" data-act="close-sheet">Got it</button>`);
@@ -877,6 +879,7 @@ document.addEventListener('change', async (e) => {
   else if (f === 'sound') { S.prefs.sound = t.checked; persist(); if (t.checked) alarm(); }
   else if (f === 'rem-time' && ui.sheet && ui.sheet.r) ui.sheet.r.time = t.value;
   else if (f === 'gim-voice') { S.gim.voice = t.checked; persist(); if (!t.checked) stopSpeaking(); }
+  else if (f === 'gim-natural') { S.gim.natural = t.checked; persist(); }
   else if (f === 'import' && t.files[0]) {
     try {
       const obj = JSON.parse(await t.files[0].text());

@@ -53,6 +53,20 @@ function fakeClaude(body) {
   return reply([{ type: 'thinking', thinking: '', signature: 'sig-0' }, { type: 'text', text: 'Salut ! Combien de jours par semaine peux-tu t\'entraîner, et as-tu des blessures ou des douleurs ?' }], 'end_turn');
 }
 
+// A short "voice": a tone that swells and fades like syllables, as a WAV the browser can decode.
+export function fakeSpeech(seconds = 1.5) {
+  const rate = 22050, n = Math.round(rate * seconds), data = Buffer.alloc(44 + n * 2);
+  data.write('RIFF', 0); data.writeUInt32LE(36 + n * 2, 4); data.write('WAVEfmt ', 8); data.writeUInt32LE(16, 16);
+  data.writeUInt16LE(1, 20); data.writeUInt16LE(1, 22); data.writeUInt32LE(rate, 24); data.writeUInt32LE(rate * 2, 28);
+  data.writeUInt16LE(2, 32); data.writeUInt16LE(16, 34); data.write('data', 36); data.writeUInt32LE(n * 2, 40);
+  for (let i = 0; i < n; i++) {
+    const t = i / rate, env = Math.abs(Math.sin(Math.PI * 4 * t));
+    data.writeInt16LE(Math.round(Math.sin(2 * Math.PI * 180 * t) * env * 2500), 44 + i * 2);
+  }
+  return data;
+}
+
+// One server stands in for both APIs: /v1/messages (Claude) and /v1/text-to-speech (ElevenLabs).
 export function startFakeAnthropic(port) {
   const seen = [];
   const server = http.createServer(async (req, res) => {
@@ -60,6 +74,12 @@ export function startFakeAnthropic(port) {
     for await (const c of req) raw += c;
     const body = JSON.parse(raw || '{}');
     seen.push({ path: req.url, headers: req.headers, body });
+    if (req.url.startsWith('/v1/text-to-speech/')) {
+      if (req.headers['xi-api-key'] !== 'el-test') { res.writeHead(401); res.end('{"detail":"invalid key"}'); return; }
+      res.writeHead(200, { 'Content-Type': 'audio/mpeg' });
+      res.end(fakeSpeech());
+      return;
+    }
     res.writeHead(200, { 'Content-Type': 'application/json', 'request-id': 'req_test' });
     res.end(JSON.stringify(fakeClaude(body)));
   });

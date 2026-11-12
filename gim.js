@@ -15,7 +15,7 @@ const T = {
     chips: ['Bâtis-moi un programme', 'Je veux perdre du gras', 'Combien de protéines par jour ?', 'J’ai mal au genou au squat'],
     proposed: 'Programme proposé', perWeek: (n) => `${n} séances par semaine`, install: 'Installer ce plan', installed: 'Plan installé',
     installedToast: 'Nouveau plan installé. Forge choisira tes charges.', finishFirst: 'Termine ta séance avant de changer de plan.',
-    settings: 'Réglages de GIM', language: 'Langue', voice: 'Lire les réponses à voix haute', newChat: 'Nouvelle conversation',
+    settings: 'Réglages de GIM', language: 'Langue', voice: 'Lire les réponses à voix haute', natural: 'Voix naturelle (ElevenLabs)', newChat: 'Nouvelle conversation',
     newChatQ: 'Recommencer la conversation ?', newChatText: 'GIM oublie cette discussion. Ton plan et tes séances ne changent pas.',
     setupTitle: 'Connecter GIM', setupText: 'Entre le code d’accès choisi pour GIM. Tu ne le fais qu’une fois.', code: 'Code d’accès', server: 'Adresse du serveur', connect: 'Connecter',
     notReady: 'GIM n’est pas encore branché à son serveur.', saved: 'GIM est connecté',
@@ -33,7 +33,7 @@ const T = {
     chips: ['Build me a program', 'I want to lose fat', 'How much protein a day?', 'My knee hurts when I squat'],
     proposed: 'Proposed program', perWeek: (n) => `${n} sessions a week`, install: 'Install this plan', installed: 'Plan installed',
     installedToast: 'New plan installed. Forge will pick your weights.', finishFirst: 'Finish your workout before changing plans.',
-    settings: 'GIM settings', language: 'Language', voice: 'Read answers out loud', newChat: 'New conversation',
+    settings: 'GIM settings', language: 'Language', voice: 'Read answers out loud', natural: 'Natural voice (ElevenLabs)', newChat: 'New conversation',
     newChatQ: 'Start over?', newChatText: 'GIM forgets this chat. Your plan and workouts stay the same.',
     setupTitle: 'Connect GIM', setupText: 'Enter the access code chosen for GIM. You only do this once.', code: 'Access code', server: 'Server address', connect: 'Connect',
     notReady: 'GIM isn’t connected to its server yet.', saved: 'GIM is connected',
@@ -47,7 +47,7 @@ const T = {
 };
 
 export const gimDefaults = () => ({
-  messages: [], installed: {}, code: '', url: GIM_URL, voice: true,
+  messages: [], installed: {}, code: '', url: GIM_URL, voice: true, natural: true,
   lang: typeof navigator !== 'undefined' && /^en/i.test(navigator.language || '') ? 'en' : 'fr',
   person: '', lastSync: 0,
 });
@@ -205,34 +205,107 @@ function setState(s) {
 
 const speechLang = () => (g().lang === 'en' ? 'en-US' : (/^fr-CA/i.test(navigator.language) ? 'fr-CA' : 'fr-FR'));
 
+// The phone's own voice, used when the natural one is off or unavailable: prefer its
+// downloaded "Enhanced"/"Premium" voices, which sound far less robotic.
 function pickVoice() {
   const want = speechLang(), base = want.slice(0, 2);
-  return voices.find((v) => v.lang === want) || voices.find((v) => v.lang.replace('_', '-').startsWith(base)) || null;
+  const score = (v) => (v.lang.replace('_', '-') === want ? 4 : 2) + (/premium|enhanced|améliorée|siri|neural|natural/i.test(v.name) ? 3 : 0);
+  return voices.filter((v) => v.lang.replace('_', '-').startsWith(base)).sort((a, b) => score(b) - score(a))[0] || null;
 }
 
-// iOS only lets a page talk after a tap; an empty utterance during the tap unlocks it.
-let unlocked = false;
+// iOS only lets a page make sound after a tap: resume the audio context and say an empty
+// utterance during the tap. "playback" keeps GIM audible with the silent switch on.
+let actx = null, analyser = null, source = null, raf = 0, speakId = 0, unlocked = false;
 function unlockSpeech() {
+  try {
+    if (navigator.audioSession) navigator.audioSession.type = 'playback';
+    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+    if (actx.state === 'suspended') actx.resume();
+  } catch { actx = null; }
   if (unlocked || !('speechSynthesis' in window)) return;
   unlocked = true;
   try { speechSynthesis.speak(new SpeechSynthesisUtterance('')); } catch { /* no voice */ }
 }
 
+// Lip-sync: the mouth opens with the loudness of the voice actually playing.
+function lipSync(on) {
+  cancelAnimationFrame(raf);
+  if (!on || !analyser) { document.querySelector('.gim-avatar')?.classList.remove('lipsync'); return; }
+  const data = new Uint8Array(analyser.fftSize);
+  const step = () => {
+    analyser.getByteTimeDomainData(data);
+    let sum = 0;
+    for (const v of data) sum += ((v - 128) / 128) ** 2;
+    const level = Math.min(1, Math.sqrt(sum / data.length) * 4);
+    const av = document.querySelector('.gim-avatar'); // re-read: a render may have replaced it
+    if (av) { av.classList.add('lipsync'); av.style.setProperty('--talk', (0.2 + level * 0.95).toFixed(2)); }
+    raf = requestAnimationFrame(step);
+  };
+  step();
+}
+
 export function stopSpeaking() {
+  speakId++;
+  try { if (source) source.stop(); } catch { /* already stopped */ }
+  source = null;
   if ('speechSynthesis' in window) speechSynthesis.cancel();
+  lipSync(false);
   if (state === 'speaking') setState('idle');
 }
 
-function speak(text) {
-  if (!g().voice || !('speechSynthesis' in window) || !text) return;
+async function fetchVoice(text) {
+  const res = await fetch(`${g().url.replace(/\/$/, '')}/speak`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Gim-Code': g().code },
+    body: JSON.stringify({ text, lang: g().lang }),
+  });
+  if (!res.ok) throw new Error(`voice ${res.status}`);
+  return actx.decodeAudioData(await res.arrayBuffer());
+}
+
+function playBuffer(buffer) {
+  return new Promise((done) => {
+    if (!analyser) { analyser = actx.createAnalyser(); analyser.fftSize = 512; analyser.connect(actx.destination); }
+    source = actx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(analyser);
+    source.onended = done;
+    setState('speaking');
+    lipSync(true);
+    source.start();
+  });
+}
+
+async function speak(text) {
+  if (!g().voice || !text) return;
+  const id = ++speakId;
+  const chunks = speechChunks(forSpeech(text, g().lang), 900);
+  if (g().natural !== false && actx) {
+    // all chunks are requested at once and played in order, so long answers don't pause
+    const jobs = chunks.map((c) => fetchVoice(c).catch((e) => e));
+    for (let i = 0; i < jobs.length; i++) {
+      const buffer = await jobs[i];
+      if (id !== speakId) return; // interrupted
+      if (buffer instanceof Error) { lipSync(false); speakDevice(chunks.slice(i), id); return; }
+      await playBuffer(buffer);
+      if (id !== speakId) return;
+    }
+    lipSync(false);
+    setState('idle');
+    return;
+  }
+  speakDevice(chunks, id);
+}
+
+function speakDevice(chunks, id) {
+  if (!('speechSynthesis' in window) || id !== speakId) return;
   speechSynthesis.cancel();
-  const chunks = speechChunks(forSpeech(text, g().lang));
   const voice = pickVoice();
-  chunks.forEach((c, i) => {
+  const parts = chunks.flatMap((c) => speechChunks(c)); // Chrome cuts long utterances
+  parts.forEach((c, i) => {
     const u = new SpeechSynthesisUtterance(c);
     u.lang = speechLang(); if (voice) u.voice = voice; u.rate = 1.03;
     if (i === 0) u.onstart = () => setState('speaking');
-    if (i === chunks.length - 1) { u.onend = () => setState('idle'); }
+    if (i === parts.length - 1) u.onend = () => setState('idle');
     u.onerror = () => setState('idle');
     speechSynthesis.speak(u);
   });
@@ -408,6 +481,7 @@ export function gimSettingsHTML(S, chips) {
   return `<h2>${t('settings')}</h2>
     <h3>${t('language')}</h3>${chips([['fr', 'Français'], ['en', 'English']], 'lang', S.gim.lang, 'gim-lang')}
     <label class="switch"><input type="checkbox" data-field="gim-voice" ${S.gim.voice ? 'checked' : ''}><span>${t('voice')}</span></label>
+    <label class="switch"><input type="checkbox" data-field="gim-natural" ${S.gim.natural !== false ? 'checked' : ''}><span>${t('natural')}</span></label>
     <label class="field"><span>${t('code')}</span><input type="text" autocomplete="off" autocapitalize="off" data-field="gim-code" value="${esc(S.gim.code)}"></label>
     <label class="field"><span>${t('server')}</span><input type="url" autocomplete="off" autocapitalize="off" data-field="gim-url" value="${esc(S.gim.url)}"></label>
     <div class="stack"><button class="btn primary block" data-act="gim-connect">${t('connect')}</button>

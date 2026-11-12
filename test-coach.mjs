@@ -5,6 +5,8 @@ import { EXERCISES, allowed } from './exercises.js';
 import { CUES } from './guide.js';
 import { defaultStepGoal, defaultWaterGoal, setDay, dayValue, stepStats, cardioKcal, pace, weeklyCardio, buildICS, activityInsights, fmtK } from './activity.js';
 import { normalize } from './store.js';
+import { DEMO_SOURCE, demoFrames } from './demos.js';
+import fs from 'node:fs';
 import { planFromTool, toolResult, chatItems, toHTML, forSpeech, speechChunks, mergeSteps, athleteContext } from './gim.js';
 
 const profile = (o = {}) => ({ name: 'Sam', goal: 'muscle', experience: 'beginner', days: 4, equipment: 'gym', unit: 'kg', bodyweight: 80, ...o });
@@ -222,6 +224,18 @@ t('athlete context: frozen facts for GIM, wrapped in tags', () => {
   const c = athleteContext(S, new Date(2026, 10, 12));
   assert.ok(c.startsWith('<athlete_context>') && c.endsWith('</athlete_context>'));
   assert.match(c, /Date: 2026-11-12/); assert.match(c, /Barbell Bench Press: estimated 1-rep max 76/); assert.match(c, /Upper A: /);
+});
+
+t('every exercise has a demo decision, and every demo has both photos', () => {
+  assert.deepEqual(Object.keys(EXERCISES).filter((id) => !(id in DEMO_SOURCE)), []);
+  let shown = 0;
+  for (const id of Object.keys(EXERCISES)) {
+    const f = demoFrames(id);
+    if (!f) continue;
+    shown++;
+    for (const p of f) { const b = fs.readFileSync(p); assert.ok(b[0] === 0xff && b[1] === 0xd8, p + ' is not a JPEG'); }
+  }
+  assert.equal(shown, 54);
 });
 
 console.log(`\n${n} tests passed`);

@@ -1,12 +1,13 @@
-// Forge's small server, two jobs:
+// Forge's small server, three jobs:
 //   POST /chat   GIM: the app sends the conversation, this Worker adds the coach instructions
 //                and the API key (which never reaches the phone) and asks Claude.
+//   POST /speak  GIM's voice: turns a reply into natural speech with ElevenLabs (MP3).
 //   /steps       Step sync: an iPhone Shortcut POSTs the day's steps from Apple Health,
 //                the app GETs them so nobody types them in.
 //
-// Secrets (set with `npx wrangler secret put NAME`): ANTHROPIC_API_KEY, ACCESS_CODE.
-// Vars (wrangler.toml): MODEL, EFFORT, ALLOWED_ORIGINS. KV binding: STEPS.
-// ANTHROPIC_BASE_URL is only for local tests.
+// Secrets (set with `npx wrangler secret put NAME`): ANTHROPIC_API_KEY, ACCESS_CODE, ELEVENLABS_API_KEY.
+// Vars (wrangler.toml): MODEL, EFFORT, ALLOWED_ORIGINS, VOICE_ID, VOICE_MODEL. KV binding: STEPS.
+// ANTHROPIC_BASE_URL and ELEVENLABS_BASE_URL are only for local tests.
 import Anthropic from '@anthropic-ai/sdk';
 import { SYSTEM_PROMPT, TOOLS } from './prompt.js';
 
@@ -43,9 +44,33 @@ export default {
     if (!allowed.includes(origin)) return json({ error: 'origin' }, 403, cors);
     if (url.pathname === '/steps' && request.method === 'GET') return readSteps(url, env, cors);
     if (url.pathname === '/chat' && request.method === 'POST') return chat(request, env, cors);
+    if (url.pathname === '/speak' && request.method === 'POST') return speak(request, env, cors);
     return json({ error: 'not_found' }, 404, cors);
   },
 };
+
+const MAX_SPEECH_CHARS = 1500;
+
+async function speak(request, env, cors) {
+  if (!env.ELEVENLABS_API_KEY) return json({ error: 'no_voice' }, 501, cors);
+  let body;
+  try { body = await request.json(); } catch { return json({ error: 'bad_json' }, 400, cors); }
+  const text = String(body.text || '').trim().slice(0, MAX_SPEECH_CHARS);
+  const lang = body.lang === 'en' ? 'en' : 'fr';
+  if (!text) return json({ error: 'no_text' }, 400, cors);
+  const model = env.VOICE_MODEL || 'eleven_multilingual_v2';
+  const voice = env.VOICE_ID || 'JBFqnCBsd6RMkjVDRZzb';
+  const base = env.ELEVENLABS_BASE_URL || 'https://api.elevenlabs.io';
+  const res = await fetch(`${base}/v1/text-to-speech/${encodeURIComponent(voice)}?output_format=mp3_44100_128`, {
+    method: 'POST',
+    headers: { 'xi-api-key': env.ELEVENLABS_API_KEY, 'Content-Type': 'application/json', Accept: 'audio/mpeg' },
+    // only the v2.5 models accept a language_code; Multilingual v2 detects it from the text
+    body: JSON.stringify({ text, model_id: model, ...(model.includes('v2_5') ? { language_code: lang } : {}) }),
+  }).catch(() => null);
+  // quota used up, bad key or outage: the app falls back to the phone's own voice
+  if (!res || !res.ok) return json({ error: 'voice', status: res ? res.status : 0 }, 502, cors);
+  return new Response(res.body, { status: 200, headers: { ...cors, 'Content-Type': 'audio/mpeg', 'Cache-Control': 'no-store' } });
+}
 
 async function chat(request, env, cors) {
   if (!env.ANTHROPIC_API_KEY) return json({ error: 'no_key' }, 500, cors);

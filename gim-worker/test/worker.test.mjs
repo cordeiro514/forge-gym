@@ -91,6 +91,34 @@ try {
     assert.ok(days['2026-03-11'] && !days['2026-01-01']);
   });
 
+  await t('speak: ElevenLabs voice with the key, model and voice from settings', async () => {
+    env.ELEVENLABS_API_KEY = 'el-test'; env.ELEVENLABS_BASE_URL = 'http://localhost:8790';
+    const r = await fetch(`${base}/speak`, { method: 'POST', headers: APP, body: JSON.stringify({ text: 'Salut, on commence !', lang: 'fr' }) });
+    assert.equal(r.status, 200);
+    assert.equal(r.headers.get('content-type'), 'audio/mpeg');
+    assert.equal(r.headers.get('access-control-allow-origin'), 'https://cordeiro514.github.io');
+    assert.ok((await r.arrayBuffer()).byteLength > 1000);
+    const sent = fake.seen.at(-1);
+    assert.equal(sent.path, '/v1/text-to-speech/JBFqnCBsd6RMkjVDRZzb?output_format=mp3_44100_128');
+    assert.deepEqual(sent.body, { text: 'Salut, on commence !', model_id: 'eleven_multilingual_v2' }); // no language_code for v2
+    env.VOICE_MODEL = 'eleven_flash_v2_5';
+    await fetch(`${base}/speak`, { method: 'POST', headers: APP, body: JSON.stringify({ text: 'x'.repeat(2000), lang: 'en' }) });
+    delete env.VOICE_MODEL;
+    assert.equal(fake.seen.at(-1).body.language_code, 'en');
+    assert.equal(fake.seen.at(-1).body.text.length, 1500);
+  });
+
+  await t('speak: refuses strangers, and reports a dead key so the app can fall back', async () => {
+    const before = fake.seen.length;
+    assert.equal((await fetch(`${base}/speak`, { method: 'POST', headers: { ...APP, 'X-Gim-Code': 'nope' }, body: '{}' })).status, 401);
+    assert.equal((await fetch(`${base}/speak`, { method: 'POST', headers: { ...APP, Origin: 'https://evil.example' }, body: '{"text":"x"}' })).status, 403);
+    assert.equal(fake.seen.length, before);
+    env.ELEVENLABS_API_KEY = 'expired';
+    assert.equal((await fetch(`${base}/speak`, { method: 'POST', headers: APP, body: '{"text":"x"}' })).status, 502);
+    delete env.ELEVENLABS_API_KEY;
+    assert.equal((await fetch(`${base}/speak`, { method: 'POST', headers: APP, body: '{"text":"x"}' })).status, 501);
+  });
+
   await t('tool schema: strict, closed objects, ids limited to the library', async () => {
     const s = TOOLS[0].input_schema;
     assert.equal(s.additionalProperties, false);

@@ -12,12 +12,13 @@ everything runs and is stored on the phone, and it works offline.
 - **Insights** on the home screen: weekly goal, streaks, stalled lifts, bodyweight trend against the goal, weigh-in reminders.
 - **Daily activity**: steps (typed in from the phone's Health app, since web apps can't read the step counter), water glasses and cardio sessions (calories estimated from activity, time and bodyweight), each with goals set from the profile.
 - **Exercise how-to**: three form cues for every exercise plus a link to demo videos; tap any exercise name.
+- **Motion demos**: start and end photos for 54 of the 55 exercises loop as a small animation in the how-to sheet, with a thumbnail on each workout card. Photos come from [free-exercise-db](https://github.com/yuhonas/free-exercise-db) (public domain), live in `demos/`, and are mapped in `demos.js`.
 - **Calendar reminders**: builds a repeating calendar file (.ics) for the chosen training days, with an alert, so reminders work without a server.
 - **Share card**: a 1080×1350 image of any finished workout for messages or Instagram.
 
 ## GIM, the talking coach (`gim.js` + `gim-worker/`)
 - Chat by voice or text with an animated avatar. GIM asks about goals, schedule, equipment and injuries, then designs a science-based plan that installs into Forge in one tap (Forge keeps choosing the weights).
-- Voice uses the phone's own speech recognition and text-to-speech. Where dictation isn't available, the keyboard's mic works.
+- Listening uses the phone's speech recognition (or the keyboard's mic). GIM speaks with a natural ElevenLabs voice through the Worker's `/speak` route, and the avatar's mouth follows the sound. Without an ElevenLabs key, or when its credits run out, it falls back to the phone's best installed voice. Voice and model are set in `gim-worker/wrangler.toml`.
 - The brain is Claude, reached through a small Cloudflare Worker in `gim-worker/` that holds the API key, checks an access code, and only answers this site. Model and effort are set in `gim-worker/wrangler.toml`.
 - The same Worker stores step counts sent each evening by an iPhone Shortcut (Apple Health), and the app pulls them in automatically. Setup steps are in the app (GIM settings, Automatic steps).
 - Local test with no cost: `cd gim-worker && npm install && npm test`, or `npm run dev` for a stand-in brain on http://localhost:8787 (access code `test-code`).

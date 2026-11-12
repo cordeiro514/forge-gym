@@ -7,6 +7,10 @@ compatibility_date = "2026-10-01"
 MODEL = "claude-opus-5-5"
 EFFORT = "medium"
 ALLOWED_ORIGINS = "https://cordeiro514.github.io,http://localhost:5173"
+# GIM's voice (ElevenLabs). Any voice id from your ElevenLabs voice library works.
+# Multilingual v2 sounds best (1 credit per character); "eleven_flash_v2_5" is faster and uses half the credits.
+VOICE_ID = "JBFqnCBsd6RMkjVDRZzb"
+VOICE_MODEL = "eleven_multilingual_v2"
 
 # Step counts sent by the iPhone Shortcut (created with `npx wrangler kv namespace create STEPS`).
 [[kv_namespaces]]
