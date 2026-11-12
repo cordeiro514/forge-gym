@@ -8,7 +8,7 @@ MODEL = "claude-opus-5-5"
 EFFORT = "medium"
 ALLOWED_ORIGINS = "https://cordeiro514.github.io,http://localhost:5173"
 
-# Step counts sent by the iPhone Shortcut. The id is filled in by `npx wrangler kv namespace create STEPS`.
+# Step counts sent by the iPhone Shortcut (created with `npx wrangler kv namespace create STEPS`).
 [[kv_namespaces]]
 binding = "STEPS"
-id = "REPLACE_WITH_KV_ID"
+id = "812b2838c4df4016bb1038f7240ba1d6"

@@ -5,7 +5,7 @@ import { EXERCISES } from './exercises.js';
 import { dayKey, addDays, weekStart, fmt, bestScore, weightTrend } from './coach.js';
 import { stepStats, cardioBetween, setDay, dayValue } from './activity.js';
 
-export const GIM_URL = ''; // the Worker's address, filled in once it is deployed
+export const GIM_URL = 'https://forge-gim.forge-gim.workers.dev'; // the Worker in gim-worker/
 
 const T = {
   fr: {
