@@ -1,6 +1,6 @@
 // Offline support. Bump CACHE whenever any file changes so phones pick up the new version.
-const CACHE = 'forge-1.0.0';
-const FILES = ['./', 'index.html', 'styles.css', 'app.js', 'coach.js', 'exercises.js', 'store.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
+const CACHE = 'forge-1.1.0';
+const FILES = ['./', 'index.html', 'styles.css', 'app.js', 'coach.js', 'exercises.js', 'store.js', 'activity.js', 'guide.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)).then(() => self.skipWaiting()));

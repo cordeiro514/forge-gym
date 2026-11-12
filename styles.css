@@ -191,3 +191,21 @@ input.num::-webkit-outer-spin-button, input.num::-webkit-inner-spin-button { -we
 .list li > span { flex: 1; min-width: 0; }
 .list em { min-width: 64px; }
 .list li span > small.muted { display: block; font-size: 12px; }
+
+/* daily activity */
+.meter { display: flex; flex-direction: column; gap: 6px; padding: 6px 0; border-top: 1px solid var(--line); }
+.card > .row + .meter { border-top: 0; }
+.m-label { font-size: 14px; font-weight: 650; }
+.m-val { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.mtrack { height: 10px; border-radius: 99px; background: var(--surface2); overflow: hidden; }
+.mtrack i { display: block; height: 100%; border-radius: 99px; background: var(--info); transition: width .3s; }
+.mtrack i.hit { background: var(--good); }
+.btn.sq { width: 38px; padding: 0; }
+.day.cardio i { background: var(--info); }
+.chips.grid3 { display: grid; grid-template-columns: repeat(3, 1fr); }
+.chips.days { flex-wrap: nowrap; gap: 6px; }
+.chips.days .chip { flex: 1; min-width: 0; padding: 8px 0; }
+.ex-name { display: inline-flex; align-items: center; gap: 6px; font: inherit; font-weight: inherit; text-align: left; }
+.ex-name svg { color: var(--muted); flex: none; }
+.cues li { font-size: 15px; }
+.list .ex-name { font-weight: 400; }

@@ -2,6 +2,9 @@
 import assert from 'node:assert/strict';
 import { generatePlan, suggest, buildWorkout, findPRs, insights, warmups, e1rm, dayKey, addDays, isDeload } from './coach.js';
 import { EXERCISES, allowed } from './exercises.js';
+import { CUES } from './guide.js';
+import { defaultStepGoal, defaultWaterGoal, setDay, dayValue, stepStats, cardioKcal, pace, weeklyCardio, buildICS, activityInsights, fmtK } from './activity.js';
+import { normalize } from './store.js';
 
 const profile = (o = {}) => ({ name: 'Sam', goal: 'muscle', experience: 'beginner', days: 4, equipment: 'gym', unit: 'kg', bodyweight: 80, ...o });
 const sess = (daysAgo, exId, sets, extra = {}) => ({ id: String(Math.random()), date: addDays(new Date(), -daysAgo).toISOString(), name: 'x', exercises: [{ exId, sets }], prs: [], ...extra });
@@ -109,6 +112,72 @@ t('insights: weigh-in nudge, deload offer after 6 straight weeks, PR card', () =
   assert.ok(insights(S).some((i) => i.id === 'deload-offer'));
   S.sessions.at(-1).prs = [{ exId: 'bb_bench', kind: 'weight', value: 90, prev: 85 }];
   assert.ok(insights(S).some((i) => i.id === 'pr'));
+});
+
+t('every exercise has three form cues', () => {
+  for (const id of Object.keys(EXERCISES)) { assert.ok(Array.isArray(CUES[id]) && CUES[id].length === 3, 'missing cues for ' + id); }
+  assert.deepEqual(Object.keys(CUES).filter((id) => !EXERCISES[id]), []);
+});
+
+t('daily goals: steps by goal, water from bodyweight (8-16 glasses)', () => {
+  assert.equal(defaultStepGoal('fatloss'), 10000); assert.equal(defaultStepGoal('strength'), 7000);
+  assert.equal(defaultWaterGoal(80, 'kg'), 11); assert.equal(defaultWaterGoal(176, 'lb'), 11);
+  assert.equal(defaultWaterGoal(40, 'kg'), 8); assert.equal(defaultWaterGoal(200, 'kg'), 16);
+});
+
+t('old backups get daily goals filled in without losing data', () => {
+  const S = normalize({ profile: profile({ goal: 'fatloss' }), plan: generatePlan(profile()), sessions: [sess(1, 'bb_bench', [{ w: 60, r: 8 }])], weights: [] });
+  assert.equal(S.profile.stepGoal, 10000); assert.equal(S.profile.cardioGoal, 150);
+  assert.deepEqual(S.steps, []); assert.deepEqual(S.cardio, []); assert.equal(S.sessions.length, 1);
+});
+
+t('per-day values: set, replace, clear', () => {
+  let l = setDay([], '2026-11-10', 5000);
+  l = setDay(l, '2026-11-09', 7000); l = setDay(l, '2026-11-10', 6000);
+  assert.deepEqual(l, [{ date: '2026-11-09', v: 7000 }, { date: '2026-11-10', v: 6000 }]);
+  assert.equal(dayValue(setDay(l, '2026-11-10', 0), '2026-11-10'), 0);
+});
+
+t('step average skips today and needs logged days', () => {
+  const now = new Date(2026, 10, 12, 15);
+  const steps = [{ date: '2026-11-12', v: 500 }, { date: '2026-11-11', v: 9000 }, { date: '2026-11-10', v: 7000 }, { date: '2026-11-01', v: 20000 }];
+  assert.deepEqual(stepStats(steps, now), { days: 2, avg: 8000 });
+  assert.equal(stepStats([], now).avg, null);
+  assert.equal(fmtK(8250), '8.3k'); assert.equal(fmtK(900), '900');
+});
+
+t('cardio: calories from MET, pace in km or miles, weekly minutes', () => {
+  assert.equal(cardioKcal('run', 30, 80, 'kg'), 392);
+  assert.equal(cardioKcal('walk', 60, 176.37, 'lb'), 304);
+  assert.equal(pace(30, 5, 'kg'), '6:00 /km');
+  assert.equal(pace(30, 0, 'kg'), '');
+  assert.equal(pace(30, 5 * 1.60934, 'lb'), '6:00 /mi');
+  const now = new Date(2026, 10, 12, 12); // Thursday
+  const cardio = [{ date: new Date(2026, 10, 10, 8).toISOString(), min: 30 }, { date: new Date(2026, 10, 12, 7).toISOString(), min: 20 }, { date: new Date(2026, 10, 3, 7).toISOString(), min: 45 }];
+  assert.deepEqual(weeklyCardio(cardio, 2, now).map((w) => w.v), [45, 50]);
+});
+
+t('calendar file: weekly repeat on chosen days, first event on a chosen day, alarm', () => {
+  const now = new Date(2026, 10, 12, 9); // Thursday
+  const ics = buildICS({ days: [4, 0, 2], time: '18:30', alarm: 30, minutes: 60, url: 'https://example.com/forge/', now });
+  assert.match(ics, /RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR\r\n/);
+  assert.match(ics, /DTSTART:20261113T183000\r\n/); // next chosen day is Friday the 13th
+  assert.match(ics, /TRIGGER:-PT30M/);
+  assert.match(ics, /DURATION:PT60M/);
+  assert.ok(ics.startsWith('BEGIN:VCALENDAR\r\n') && ics.endsWith('END:VCALENDAR\r\n'));
+  assert.doesNotMatch(buildICS({ days: [3], time: '07:00', alarm: null, minutes: 45, url: 'u', now }), /VALARM/);
+  assert.match(buildICS({ days: [3], time: '07:00', alarm: 0, minutes: 45, url: 'u', now }), /DTSTART:20261112T070000/); // today counts
+});
+
+t('activity insights: fat-loss walk nudge, steps on track, cardio goal', () => {
+  const now = new Date();
+  const S = normalize({ profile: profile({ goal: 'fatloss' }), plan: generatePlan(profile()), sessions: [], weights: [] });
+  S.steps = [1, 2, 3].map((i) => ({ date: dayKey(addDays(now, -i)), v: 6000 }));
+  assert.equal(activityInsights(S, now)[0].title, 'Add a walk');
+  S.steps = [1, 2, 3].map((i) => ({ date: dayKey(addDays(now, -i)), v: 12000 }));
+  assert.equal(activityInsights(S, now)[0].title, 'Steps on track');
+  S.cardio = [{ date: now.toISOString(), min: 160 }];
+  assert.ok(activityInsights(S, now).some((i) => i.id === 'cardio'));
 });
 
 console.log(`\n${n} tests passed`);

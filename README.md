@@ -10,6 +10,10 @@ everything runs and is stored on the phone, and it works offline.
 - **Deload**: suggested after 6 straight training weeks or 3 stalled lifts; one tap lowers loads and sets for a week, then ends by itself.
 - **During a workout**: warm-up sets, rest timer (beep and vibrate), screen stays awake, record detection (estimated 1-rep max).
 - **Insights** on the home screen: weekly goal, streaks, stalled lifts, bodyweight trend against the goal, weigh-in reminders.
+- **Daily activity**: steps (typed in from the phone's Health app, since web apps can't read the step counter), water glasses and cardio sessions (calories estimated from activity, time and bodyweight), each with goals set from the profile.
+- **Exercise how-to**: three form cues for every exercise plus a link to demo videos; tap any exercise name.
+- **Calendar reminders**: builds a repeating calendar file (.ics) for the chosen training days, with an alert, so reminders work without a server.
+- **Share card**: a 1080×1350 image of any finished workout for messages or Instagram.
 
 ## Try it locally
 ```bash

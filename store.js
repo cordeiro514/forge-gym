@@ -5,21 +5,41 @@
 //   plan     { templates:[{id,name,exercises:[{exId,sets,lo,hi,rest}]}], rotation, deload:{start,end}|null, lastDeloadEnd }
 //   sessions [{ id, date(ISO), name, templateId, deload, durMin, volume, prs, exercises:[{exId, sets:[{w,r}]}] }]
 //   weights  [{ date:'YYYY-MM-DD', v }]
+//   steps    [{ date:'YYYY-MM-DD', v }]          water [{ date, v }] (glasses)
+//   cardio   [{ id, date(ISO), type, min, km, kcal }]  (distance always stored in km)
 //   active   in-progress workout (see coach.buildWorkout) | null
-//   prefs    { sound, installDismissed }
+//   prefs    { sound, installDismissed, reminders:{days,time,alarm}|null, remindersSet, remindersDismissed }
 import { roundTo } from './coach.js';
+import { defaultStepGoal, defaultWaterGoal, DEFAULT_CARDIO_GOAL } from './activity.js';
 
 const KEY = 'forge.v1';
 export let storageOk = true;
 
-const blank = () => ({ v: 1, profile: null, plan: null, sessions: [], weights: [], active: null, prefs: { sound: true, installDismissed: false } });
+const blank = () => ({
+  v: 1, profile: null, plan: null, sessions: [], weights: [], steps: [], water: [], cardio: [], active: null,
+  prefs: { sound: true, installDismissed: false, reminders: null, remindersSet: false, remindersDismissed: false },
+});
+
+const list = (x) => (Array.isArray(x) ? x : []);
 
 export function normalize(raw) {
   const S = { ...blank(), ...raw };
   S.prefs = { ...blank().prefs, ...(raw && raw.prefs) };
-  S.sessions = (Array.isArray(S.sessions) ? S.sessions : []).sort((a, b) => new Date(a.date) - new Date(b.date));
-  S.weights = (Array.isArray(S.weights) ? S.weights : []).sort((a, b) => a.date.localeCompare(b.date));
+  S.sessions = list(S.sessions).sort((a, b) => new Date(a.date) - new Date(b.date));
+  S.weights = list(S.weights).sort((a, b) => a.date.localeCompare(b.date));
+  S.steps = list(S.steps);
+  S.water = list(S.water);
+  S.cardio = list(S.cardio).sort((a, b) => new Date(a.date) - new Date(b.date));
+  if (S.profile) withGoals(S.profile);
   return S;
+}
+
+// Fills in daily targets for profiles created before they existed.
+export function withGoals(p) {
+  if (!(p.stepGoal > 0)) p.stepGoal = defaultStepGoal(p.goal);
+  if (!(p.waterGoal > 0)) p.waterGoal = defaultWaterGoal(p.bodyweight, p.unit);
+  if (!(p.cardioGoal > 0)) p.cardioGoal = DEFAULT_CARDIO_GOAL;
+  return p;
 }
 
 export function load() {
