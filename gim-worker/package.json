@@ -1,0 +1,16 @@
+{
+  "name": "forge-gim",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node test/worker.test.mjs",
+    "dev": "node test/dev.mjs",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.8.0"
+  },
+  "devDependencies": {
+    "wrangler": "^4.161.0"
+  }
+}

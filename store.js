@@ -11,6 +11,7 @@
 //   prefs    { sound, installDismissed, reminders:{days,time,alarm}|null, remindersSet, remindersDismissed }
 import { roundTo } from './coach.js';
 import { defaultStepGoal, defaultWaterGoal, DEFAULT_CARDIO_GOAL } from './activity.js';
+import { gimDefaults } from './gim.js';
 
 const KEY = 'forge.v1';
 export let storageOk = true;
@@ -30,6 +31,8 @@ export function normalize(raw) {
   S.steps = list(S.steps);
   S.water = list(S.water);
   S.cardio = list(S.cardio).sort((a, b) => new Date(a.date) - new Date(b.date));
+  S.gim = { ...gimDefaults(), ...(raw && raw.gim) };
+  if (!S.gim.url) S.gim.url = gimDefaults().url; // a backup restored before GIM was deployed
   if (S.profile) withGoals(S.profile);
   return S;
 }

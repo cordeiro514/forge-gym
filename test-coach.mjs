@@ -5,6 +5,7 @@ import { EXERCISES, allowed } from './exercises.js';
 import { CUES } from './guide.js';
 import { defaultStepGoal, defaultWaterGoal, setDay, dayValue, stepStats, cardioKcal, pace, weeklyCardio, buildICS, activityInsights, fmtK } from './activity.js';
 import { normalize } from './store.js';
+import { planFromTool, toolResult, chatItems, toHTML, forSpeech, speechChunks, mergeSteps, athleteContext } from './gim.js';
 
 const profile = (o = {}) => ({ name: 'Sam', goal: 'muscle', experience: 'beginner', days: 4, equipment: 'gym', unit: 'kg', bodyweight: 80, ...o });
 const sess = (daysAgo, exId, sets, extra = {}) => ({ id: String(Math.random()), date: addDays(new Date(), -daysAgo).toISOString(), name: 'x', exercises: [{ exId, sets }], prs: [], ...extra });
@@ -178,6 +179,49 @@ t('activity insights: fat-loss walk nudge, steps on track, cardio goal', () => {
   assert.equal(activityInsights(S, now)[0].title, 'Steps on track');
   S.cardio = [{ date: now.toISOString(), min: 160 }];
   assert.ok(activityInsights(S, now).some((i) => i.id === 'cardio'));
+});
+
+t('GIM plans become Forge plans, cleaned up', () => {
+  const p = planFromTool({ title: 'Haut/Bas', summary: 's', daysPerWeek: 9, days: [
+    { name: 'Haut', focus: 'f', exercises: [{ id: 'bb_bench', sets: 9, repsMin: 12, repsMax: 6, restSec: 10 }, { id: 'nope', sets: 3, repsMin: 8, repsMax: 12, restSec: 90 }] },
+    { name: 'Vide', focus: '', exercises: [{ id: 'fake', sets: 3, repsMin: 8, repsMax: 12, restSec: 90 }] },
+  ] });
+  assert.ok(p.ok); assert.equal(p.templates.length, 1); assert.equal(p.daysPerWeek, 6);
+  assert.deepEqual(p.templates[0].exercises[0], { exId: 'bb_bench', sets: 6, lo: 6, hi: 12, rest: 30 });
+  assert.equal(p.issues.length, 2);
+  const res = toolResult({ type: 'tool_use', id: 'x', name: 'propose_plan', input: { days: [] } });
+  assert.equal(res.is_error, true); assert.equal(res.tool_use_id, 'x');
+  assert.equal(toolResult({ type: 'tool_use', id: 'y', name: 'propose_plan', input: { title: 't', days: [{ name: 'A', exercises: [{ id: 'pushup', sets: 3, repsMin: 8, repsMax: 15, restSec: 60 }] }] } }).is_error, undefined);
+});
+
+t('GIM chat hides the context, thinking and tool plumbing', () => {
+  const items = chatItems([
+    { role: 'user', content: [{ type: 'text', text: '<athlete_context>\nx\n</athlete_context>' }, { type: 'text', text: 'Salut' }] },
+    { role: 'assistant', content: [{ type: 'thinking', thinking: '', signature: 's' }, { type: 'text', text: 'Hey' }, { type: 'tool_use', id: 't1', name: 'propose_plan', input: {} }] },
+    { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: 'ok' }] },
+  ]);
+  assert.deepEqual(items.map((i) => i.who), ['me', 'gim', 'plan']);
+});
+
+t('GIM text: safe HTML, speakable French, short speech chunks', () => {
+  assert.equal(toHTML('**Fort** <b>\n- un\n- deux'), '<p><b>Fort</b> &lt;b&gt;<br>- un<br>- deux</p>');
+  assert.equal(toHTML('- un\n- deux'), '<ul><li>un</li><li>deux</li></ul>');
+  assert.equal(forSpeech('**3 × 8–12** reps', 'fr'), '3 fois 8 à 12 reps');
+  const chunks = speechChunks('Phrase un. '.repeat(40), 100);
+  assert.ok(chunks.length > 3 && chunks.every((c) => c.length <= 100));
+});
+
+t('Apple Health steps merge without lowering a bigger count', () => {
+  const r = mergeSteps([{ date: '2026-11-11', v: 12000 }], { '2026-11-11': 9000, '2026-11-12': 4300, bad: 5 });
+  assert.ok(r.changed); assert.deepEqual(r.steps, [{ date: '2026-11-11', v: 12000 }, { date: '2026-11-12', v: 4300 }]);
+  assert.equal(mergeSteps(r.steps, { '2026-11-12': 4000 }).changed, false);
+});
+
+t('athlete context: frozen facts for GIM, wrapped in tags', () => {
+  const S = normalize({ profile: profile(), plan: generatePlan(profile()), sessions: [sess(2, 'bb_bench', [{ w: 60, r: 8 }])], weights: [] });
+  const c = athleteContext(S, new Date(2026, 10, 12));
+  assert.ok(c.startsWith('<athlete_context>') && c.endsWith('</athlete_context>'));
+  assert.match(c, /Date: 2026-11-12/); assert.match(c, /Barbell Bench Press: estimated 1-rep max 76/); assert.match(c, /Upper A: /);
 });
 
 console.log(`\n${n} tests passed`);

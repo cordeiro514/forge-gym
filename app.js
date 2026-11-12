@@ -8,9 +8,13 @@ import {
   DEFAULT_DAYS, buildICS, activityInsights,
 } from './activity.js';
 import { CUES } from './guide.js';
+import {
+  attachGim, gimHTML, gimSettingsHTML, stepsAutoHTML, gimSend, gimMic, gimRetry, gimInstall, gimNew, gimSetup, stopSpeaking,
+  personId, syncSteps, configured, t as gt,
+} from './gim.js';
 import { load, save, wipe, convertUnits, normalize, validateImport, withGoals } from './store.js';
 
-const VERSION = '1.1.0';
+const VERSION = '1.2.0';
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const cap = (s) => s[0].toUpperCase() + s.slice(1);
@@ -38,6 +42,9 @@ const PATHS = {
   share: '<path d="M12 15V3M8 7l4-4 4 4"/><path d="M5 12v7h14v-7"/>',
   minus: '<path d="M5 12h14"/>',
   bell: '<path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 21h4"/>',
+  gim: '<circle cx="12" cy="12.5" r="9"/><path d="M3.6 9h16.8"/><path d="M9 13h.01M15 13h.01"/><path d="M9.5 16.5c1.5 1 3.5 1 5 0"/>',
+  mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>',
+  send: '<path d="M5 12h13M13 6l6 6-6 6"/>',
 };
 const icon = (n, s = 22) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${PATHS[n]}</svg>`;
 
@@ -276,6 +283,7 @@ function planHTML() {
   return `<main class="screen">
     <header class="top"><div><h1>Your plan</h1><p class="muted">${goal} · ${p.days} days/week · ${cap(p.equipment === 'gym' ? 'full gym' : p.equipment)}</p></div></header>
     <p class="muted small">I pick weights and reps for every session from what you did last time. Workouts rotate in order, so a missed day never breaks the plan.</p>
+    ${S.plan.source === 'gim' ? `<section class="card insight good"><div><h3>Designed with GIM</h3><p>${esc(S.plan.title)}</p></div>${S.prevPlan ? '<button class="btn sm ghost" data-act="restore-plan">Undo</button>' : ''}</section>` : ''}
     ${ui.planStale ? staleBanner() : ''}
     ${S.plan.templates.map((t, ti) => `<section class="card"><div class="row between"><div><p class="eyebrow">${ti === nextIdx() ? 'Next up' : `Day ${ti + 1}`}</p><h2>${esc(t.name)}</h2></div><button class="btn sm ghost" data-act="start" data-t="${ti}">Start</button></div>
       <ul class="list">${t.exercises.map((e, k) => `<li><span><button class="ex-name" data-act="howto" data-id="${e.exId}">${esc(EXERCISES[e.exId].name)}</button><small class="muted"> ${cap(EXERCISES[e.exId].muscle)}</small></span><em>${e.sets} × ${e.lo}–${e.hi}</em><button class="icon-btn sm" data-act="plan-swap" data-t="${ti}" data-k="${k}" aria-label="Swap ${esc(EXERCISES[e.exId].name)}">${icon('swap', 18)}</button></li>`).join('')}</ul></section>`).join('')}
@@ -302,7 +310,8 @@ function settingsHTML() {
       <label class="field"><span>Steps per day</span><input type="number" inputmode="numeric" min="1000" step="500" data-field="p-stepgoal" value="${p.stepGoal}"></label>
       <label class="field"><span>Glasses of water per day (250 ml / 8 oz)</span><input type="number" inputmode="numeric" min="1" data-field="p-watergoal" value="${p.waterGoal}"></label>
       <label class="field"><span>Cardio minutes per week</span><input type="number" inputmode="numeric" min="10" step="10" data-field="p-cardiogoal" value="${p.cardioGoal}"></label>
-      <p class="muted small">Set automatically from your goal and bodyweight. Change them any time.</p></section>
+      <p class="muted small">Set automatically from your goal and bodyweight. Change them any time.</p>
+      <button class="btn ghost" data-act="steps-auto">${gt('autoSteps')}</button></section>
     <section class="card"><h3>Workout reminders</h3><p class="muted small">${S.prefs.reminders ? `Added for ${S.prefs.reminders.days.map((d) => WEEKDAYS[d]).join(', ')} at ${S.prefs.reminders.time}.` : 'Put your training days in your phone\'s calendar, with an alert before each workout.'}</p><button class="btn ghost" data-act="reminders">${icon('bell', 18)} ${S.prefs.reminders ? 'Change reminders' : 'Set up reminders'}</button></section>
     <section class="card"><h3>Rest timer</h3><label class="switch"><input type="checkbox" data-field="sound" ${S.prefs.sound ? 'checked' : ''}><span>Beep and vibrate when rest ends</span></label></section>
     <section class="card"><h3>Your data</h3><p class="muted small">Everything is stored on this phone only. Export a backup now and then, especially before changing phones or clearing browser data.</p>
@@ -312,9 +321,10 @@ function settingsHTML() {
   </main>`;
 }
 
-const TABS = [['today', 'Today', 'home'], ['progress', 'Progress', 'chart'], ['plan', 'Plan', 'list'], ['profile', 'Profile', 'user']];
+const TABS = [['today', 'Today', 'home'], ['progress', 'Progress', 'chart'], ['gim', 'GIM', 'gim'], ['plan', 'Plan', 'list'], ['profile', 'Profile', 'user']];
 function tabsHTML() {
-  const body = { today: todayHTML, progress: progressHTML, plan: planHTML, profile: settingsHTML }[ui.tab]();
+  const gimScreen = () => gimHTML(S, { more: icon('more'), mic: icon('mic', 26), send: icon('send', 22) });
+  const body = { today: todayHTML, progress: progressHTML, gim: gimScreen, plan: planHTML, profile: settingsHTML }[ui.tab]();
   return `${body}<nav class="tabbar" aria-label="Main">${TABS.map(([k, label, ic]) => `<button class="tab ${ui.tab === k ? 'on' : ''}" data-act="nav" data-tab="${k}" ${ui.tab === k ? 'aria-current="page"' : ''}>${icon(ic)}<span>${label}</span></button>`).join('')}</nav>`;
 }
 
@@ -367,7 +377,8 @@ function sheetHTML(sh) {
       return panel(`<h2>Log steps</h2>${chips([['today', 'Today'], ['yesterday', 'Yesterday']], 'day', sh.day, 'steps-day')}
         <label class="field"><span>Steps</span><input type="number" inputmode="numeric" min="0" data-field="steps" value="${cur || ''}" placeholder="8000" autofocus></label>
         <p class="muted small">${isIOS() ? 'Copy the number from the Health app (Browse, Activity, Steps).' : 'Copy the number from Google Fit, Samsung Health or your watch app.'} Web apps can't read the step counter directly.</p>
-        <button class="btn primary block" data-act="save-steps">Save</button>`);
+        <button class="btn primary block" data-act="save-steps">Save</button>
+        <button class="btn ghost block" data-act="steps-auto">${gt('autoSteps')}</button>`);
     }
     case 'cardio': {
       const u = unit() === 'kg' ? 'km' : 'mi';
@@ -403,6 +414,10 @@ function sheetHTML(sh) {
     }
     case 'install':
       return panel(`<h2>Add to your home screen</h2>${isIOS() ? '<ol class="steps"><li>Open this page in <b>Safari</b>.</li><li>Tap the <b>Share</b> button (square with an arrow).</li><li>Choose <b>Add to Home Screen</b>, then <b>Add</b>.</li></ol>' : '<ol class="steps"><li>Open this page in <b>Chrome</b>.</li><li>Tap the <b>⋮</b> menu.</li><li>Choose <b>Install app</b> (or <b>Add to Home screen</b>).</li></ol>'}<p class="muted small">After that it opens full screen, works offline and keeps your data on the phone.</p><button class="btn primary block" data-act="close-sheet">Got it</button>`);
+    case 'gim-settings':
+      return panel(gimSettingsHTML(S, chips));
+    case 'steps-auto':
+      return panel(stepsAutoHTML(S));
     case 'confirm':
       return confirmSheet(sh.title, sh.text, sh.act, sh.label, sh.danger);
     default:
@@ -622,7 +637,39 @@ function workoutImage(s) {
 const PLAN_KEYS = ['goal', 'experience', 'days', 'equipment'];
 
 const A = {
-  nav(el) { ui.tab = el.dataset.tab; render(); window.scrollTo(0, 0); },
+  nav(el) {
+    if (ui.tab === 'gim' && el.dataset.tab !== 'gim') stopSpeaking();
+    ui.tab = el.dataset.tab; render();
+    window.scrollTo(0, ui.tab === 'gim' ? document.body.scrollHeight : 0);
+  },
+
+  'gim-send'() { const input = $('#gim-input'); if (input && input.value.trim()) { const text = input.value; input.value = ''; gimSend(text); } },
+  'gim-chip': (el) => gimSend(el.dataset.text),
+  'gim-mic': () => gimMic(),
+  'gim-retry': () => gimRetry(),
+  'gim-install': (el) => gimInstall(el.dataset.id),
+  'gim-settings': () => { ui.gimDraft = {}; openSheet({ type: 'gim-settings' }); },
+  'gim-lang'(el) { S.gim.lang = el.dataset.v; persist(); renderSheet(); render(); },
+  'gim-connect'() {
+    const d = ui.gimDraft || {};
+    gimSetup(d.code ?? S.gim.code, d.url ?? S.gim.url);
+    ui.gimDraft = {};
+    if (ui.sheet && ui.sheet.type === 'gim-settings') closeSheet();
+    if (configured()) syncSteps(true);
+  },
+  'gim-new-confirm': () => openSheet({ type: 'confirm', title: gt('newChatQ'), text: gt('newChatText'), act: 'gim-new', label: gt('newChat'), danger: true }),
+  'gim-new'() { closeSheet(); gimNew(); },
+  'steps-auto'() { personId(S); persist(); openSheet({ type: 'steps-auto' }); },
+  async 'steps-sync'() {
+    if (!configured()) { toast(gt('notReady')); return; }
+    await syncSteps(true);
+    toast(`Steps today: ${dayValue(S.steps, dayKey(new Date())).toLocaleString()}`);
+  },
+  'restore-plan'() {
+    if (!S.prevPlan || S.active) return;
+    [S.plan, S.prevPlan] = [S.prevPlan, S.plan];
+    persist(); render(); toast('Previous plan restored');
+  },
   start(el) { if (S.active) { ui.sheet = null; ui.view = 'workout'; render(); return; } startWorkout(+el.dataset.t); },
   resume() { ui.view = 'workout'; render(); window.scrollTo(0, 0); },
   leave() { ui.view = 'tabs'; ui.tab = 'today'; render(); window.scrollTo(0, 0); },
@@ -738,7 +785,9 @@ const A = {
   'dismiss-install'() { S.prefs.installDismissed = true; persist(); render(); },
 
   export() {
-    shareFile(new Blob([JSON.stringify(S, null, 2)], { type: 'application/json' }), `forge-backup-${dayKey(new Date())}.json`, 'Forge backup');
+    // the GIM access code stays on this phone, out of backup files
+    const copy = { ...S, gim: { ...S.gim, code: '' } };
+    shareFile(new Blob([JSON.stringify(copy, null, 2)], { type: 'application/json' }), `forge-backup-${dayKey(new Date())}.json`, 'Forge backup');
   },
   share(el) {
     const s = S.sessions.find((x) => x.id === el.dataset.id);
@@ -818,6 +867,7 @@ document.addEventListener('input', (e) => {
   else if (f === 'p-watergoal') { if (+t.value >= 1 && +t.value <= 30) { S.profile.waterGoal = Math.round(+t.value); persist(); } }
   else if (f === 'p-cardiogoal') { if (+t.value >= 10) { S.profile.cardioGoal = Math.round(+t.value); persist(); } }
   else if (f === 'cardio-min' || f === 'cardio-dist') ui.sheet[f === 'cardio-min' ? 'min' : 'dist'] = t.value;
+  else if (f === 'gim-code' || f === 'gim-url') { ui.gimDraft = ui.gimDraft || {}; ui.gimDraft[f === 'gim-code' ? 'code' : 'url'] = t.value; }
   else if (f === 'rem-time') ui.sheet.r.time = t.value;
 });
 
@@ -826,6 +876,7 @@ document.addEventListener('change', async (e) => {
   if (f === 'chart-ex') { ui.chartEx = t.value; render(); }
   else if (f === 'sound') { S.prefs.sound = t.checked; persist(); if (t.checked) alarm(); }
   else if (f === 'rem-time' && ui.sheet && ui.sheet.r) ui.sheet.r.time = t.value;
+  else if (f === 'gim-voice') { S.gim.voice = t.checked; persist(); if (!t.checked) stopSpeaking(); }
   else if (f === 'import' && t.files[0]) {
     try {
       const obj = JSON.parse(await t.files[0].text());
@@ -841,11 +892,21 @@ document.addEventListener('change', async (e) => {
 window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferredPrompt = e; if (S.profile && ui.view === 'tabs' && ui.tab === 'today' && !ui.sheet) render(); });
 window.addEventListener('appinstalled', () => { deferredPrompt = null; });
 
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && e.target.id === 'gim-input') { e.preventDefault(); A['gim-send'](); }
+});
+
 // ---------- boot ----------
 expireDeload();
 if (S.profile && navigator.storage && navigator.storage.persist) navigator.storage.persist();
 if (S.active) ui.view = 'workout';
+attachGim({
+  S: () => S, persist, toast,
+  render: (toBottom) => { if (ui.view !== 'workout') { render(); if (toBottom && ui.tab === 'gim') window.scrollTo(0, document.body.scrollHeight); } },
+});
 render();
+syncSteps();
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') syncSteps(); });
 
 if ('serviceWorker' in navigator && (!['localhost', '127.0.0.1'].includes(location.hostname) || location.search.includes('sw'))) {
   let had = !!navigator.serviceWorker.controller;

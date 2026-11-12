@@ -15,6 +15,13 @@ everything runs and is stored on the phone, and it works offline.
 - **Calendar reminders**: builds a repeating calendar file (.ics) for the chosen training days, with an alert, so reminders work without a server.
 - **Share card**: a 1080×1350 image of any finished workout for messages or Instagram.
 
+## GIM, the talking coach (`gim.js` + `gim-worker/`)
+- Chat by voice or text with an animated avatar. GIM asks about goals, schedule, equipment and injuries, then designs a science-based plan that installs into Forge in one tap (Forge keeps choosing the weights).
+- Voice uses the phone's own speech recognition and text-to-speech. Where dictation isn't available, the keyboard's mic works.
+- The brain is Claude, reached through a small Cloudflare Worker in `gim-worker/` that holds the API key, checks an access code, and only answers this site. Model and effort are set in `gim-worker/wrangler.toml`.
+- The same Worker stores step counts sent each evening by an iPhone Shortcut (Apple Health), and the app pulls them in automatically. Setup steps are in the app (GIM settings, Automatic steps).
+- Local test with no cost: `cd gim-worker && npm install && npm test`, or `npm run dev` for a stand-in brain on http://localhost:8787 (access code `test-code`).
+
 ## Try it locally
 ```bash
 node serve.mjs        # then open http://localhost:5173
